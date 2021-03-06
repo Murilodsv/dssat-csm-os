@@ -690,6 +690,21 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     real    sc
     real    dso
     real    watdmd
+
+!>>> Data Assimilation
+    real    sla_kf, lf_dead_frac
+    integer ROWS, KF_I
+    integer IND
+    integer I
+    integer ISECT, COUNT_K
+    integer YYDDD
+    CHARACTER*12 FILEKF
+    CHARACTER*80 ROW80
+    CHARACTER*1 KF
+    
+    INTEGER,ALLOCATABLE,DIMENSION(:) :: TRNOKF, DATEKF, DASKF
+    REAL,ALLOCATABLE,DIMENSION(:) ::  LAIKF, LAISD
+!>>> Data Assimilation
     
     character 	(len = 6)	pltype      ! plan	!  Planting type (Ratoon or PlCane)    
     character 	(len = 6)	cropstatus  ! plan	!  Dead or Alive
@@ -772,6 +787,9 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     write(YRDOY_ch, '(I7)')     CONTROL % YRDOY
     read(YRDOY_ch,'(I4)')       year
     read(YRDOY_ch,'(4X,I3)')    doy
+!>>> Data Assimilation
+    read(YRDOY_ch,'(2X,I5)')    YYDDD
+!>>> Data Assimilation
             
     !--- Number of soil layers (according to soil profile)
     nlay        = SOILPROP % NLAYR
@@ -799,7 +817,8 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     ratoon_r            = 0.d0
     call find_inp_sam(ratoon_r, 'RATOON', Control)
     if(ratoon_r .ge. 0.99) ratoon = .true.
-        
+    
+         
     !--- Delete any detailed file regardless if detailed is switched on
     call SC_OPGROW_SAM_DETAILED (CONTROL, CaneCrop,YRPLT)
     
@@ -811,11 +830,8 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     swface              = 1.d0
     STGDOY              = 0
     
-    !--- Update flags for reading cultivar/species file 
-    !--- Note: We are borrowing the below subroutines from CANEGRO for the sake of i/o
+    !--- Update cultivar file
     call get_cultivar_coeff(maxgl_r,'dummy', CONTROL, CF_ERR)
-    call get_species_coeff(tb,      'dummy', CONTROL, SPC_ERROR)
-    
     call SC_OPHARV_SAM(CONTROL, ISWITCH,  &
     CaneCrop, flemerged, maxlai,          &
     swfacp, swface, STGDOY, XLAI, YRPLT)
@@ -964,6 +980,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     t_mid_ws_til    = t_mid_ws_pho
     t_min_ws_til    = t_min_ws_pho
     
+    
     !--------------------------!
     !--- Simulation Options ---!
     !--------------------------!
@@ -990,6 +1007,50 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     
     !--- Use mulch effect
     mulcheffect         = .true.    ! Mulch effect is switched on
+
+!>>> Data Assimilation
+    
+    !--- Read meta info of the assimilation data file
+    call READ_LINES(CONTROL, ROWS, IND, FILEKF, KF)
+    
+    !--- Variable used to count the number of assimilations 
+    COUNT_K = 1
+    
+    !--- Check if the data simulation will be done 
+    IF (KF .EQ. 'Y') THEN
+        
+        IF (ROWS.GT.0) THEN
+            !--- Create an array with the number of assimilation data
+            ALLOCATE (TRNOKF(ROWS), DATEKF(ROWS), DASKF(ROWS))
+            ALLOCATE (LAIKF(ROWS), LAISD(ROWS))
+            !call READ_LINES(CONTROL, ROWS, IND, FILEKF, KF)
+            
+            !--- Open the .SCK file
+            OPEN(67, FILE = FILEKF, STATUS = 'UNKNOWN')
+    
+            ISECT = 0
+            I = 1
+            DO WHILE (ISECT.EQ.0)
+                READ(67, '(A80)', IOSTAT=ISECT) ROW80
+                IF (ROW80(1:1) .NE. "*" .AND. ROW80(1:20) .NE. "                    " .AND. ROW80(1:1) .NE. "@".AND. ROW80(1:1) .NE. "K") THEN
+                    READ (ROW80,'(3I6, 2F6.2)',IOSTAT=ISECT) TRNOKF(I), DATEKF(I), DASKF(I), LAIKF(I), LAISD(I)
+                    I = I + 1
+                    IF (I .GT. ROWS) THEN
+                        ISECT = 1
+                    END IF
+                END IF
+            END DO
+            CLOSE(67)         
+        END IF
+    ELSE
+        if (.not. allocated(LAIKF)) allocate(LAIKF(1))
+        if (.not. allocated(DASKF)) allocate(DASKF(1))
+        if (.not. allocated(DATEKF)) allocate(DATEKF(1))
+        LAIKF(1) = -99
+        DASKF(1) = -99
+    END IF
+
+!>>> Data Assimilation
     
     !----------------------------------!
     !--- Crop States Initialization ---!
@@ -1070,7 +1131,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         if(bottom(1) .ge. initcropdepth)then            
             initcropdepth = bottom(1) + 0.01 !Ensure that the ratoon depth shoot is below first soil layer           
         endif
-        
+
         !--- Check root dry weight left from last season
         if(nseason .eq. 1) then
         
@@ -1127,7 +1188,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
             cropdstage      =  'Sprout'
             cropstatus      = ' Alive'
             cstat           = 1.d0
-            flcropalive     = .true.    
+            flcropalive     = .true.
             
             !--- below ground phytomers
             nphy_BGround = 0
@@ -1193,7 +1254,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         !--- Crop Depth [cm]
         rdm             = min(rdm, bottom(nlay))    
         effective_rd    = initcropdepth
-        rd              = initcropdepth
+        rd              = initcropdepth    
         rpup            = 0.d0
         
         !--- Crop Stage
@@ -1204,7 +1265,6 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         
         !--- below ground phytomers
         nphy_BGround = 0
-        
     endif
             
     !--- Biomass and Aerial Conditions
@@ -1262,7 +1322,6 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     
     !--- phytomer stimuli
     phy_stimuli = 0.d0
-    
     if(.not. (aint(nstk_now) .eq. nstk_now))then
         !--- Increase one tiller to account for decimals
         atln_now    = aint(nstk_now) + 1
@@ -1286,7 +1345,6 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     
     !--- initialize tiller age profile
     tillerageprof = 0.d0
-    
     !--- Flags
     fl_use_reserves     = .true.
     flemerged           = .false.
@@ -1319,7 +1377,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     diac_at_emergence   = 0.d0
     
     !--- Resources used for emergence (reset plant memory)
-    res_used_emerg      = 0.d0        
+    res_used_emerg      = 0.d0          
     
     !--- Light accumulated for photosynthesis (MJ m-2)
     acc_par             = 0.d0
@@ -1973,7 +2031,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
                     fl_tiller_stop      = .false.
                     
                     !--- Update Tillering dead rate [till cdays-1]
-                    if(diacsoil .gt. chumat_lt)then
+                    if(diacsoil .ge. chumat_lt)then
                         dnstk_dead_rate = 0.d0
                     else                        
                         dnstk_dead_rate     = (popmat - nstk_now) / (chumat_lt - diacsoil)
@@ -2897,10 +2955,12 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     
     !--- Overall Biomass Gain
     ddw     =    ddw_rt + (ddw_lf + ddw_lf_appear) + ddw_it + dsubsres
-    
-    !--- Ratio Reserves Variation    
+
+!>>> Data Assimilation
+    !--- Ratio Reserves Variation   ! IZAEL MODIFICATION AGO 2020
     dsubsres_ratio  = 1.d0
-    if(subsres .gt. 0.d0) dsubsres_ratio  = (subsres + dsubsres) / subsres
+    if((subsres .gt. 0.d0) .and. (subsres .gt. dsubsres)) dsubsres_ratio  = (subsres + dsubsres) / subsres
+!>>> Data Assimilation
     
     !-------------------!
     !--- Stalk Rates ---!
@@ -2986,6 +3046,18 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     !------------------------!
     !--- Step Integration ---!
     !------------------------!
+    
+!>>> Data Assimilation
+    
+    !--- Checks if this is a day with data available for data assimilation based on YYDDD 
+    !IF (DASKF(COUNT_K) .EQ. DAS) THEN
+    IF (DATEKF(COUNT_K) .EQ. YYDDD) THEN
+        KF_I = 1 ! Key for a day with data assimilation in the integration step
+    ELSE
+        KF_I = 0
+    END IF
+    
+!>>> Data Assimilation
     
     !--- Phytomer Level Integration    
     do phy   = 1, n_ph
@@ -3087,7 +3159,40 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
       
     !--- Field Level Biomass Integration [ton ha-1]
     dw_rt       =   dw_rt       +   ddw_rt      -   ddw_rt_dead
-    dw_lf       =   dw_lf       +   ddw_lf      -   ddw_lf_dead     -   ddw_lf_shed     +   ddw_lf_appear
+
+!>>> Data Assimilation
+    
+    !--- Check with a day with data for data assimilation available
+    IF (KF_I .EQ. 1) THEN 
+        IF ((lai .EQ. 0.d0) .OR. (dw_lf .EQ. 0.d0)) THEN    ! Verifica se os valores de LAI e DW_LF calculados pelo modelo
+                                                            ! são iguais a zero
+           sla_kf = sla / 10000.                            ! converve o sla de cm2/g para g/m2
+           lf_dead_frac = 0.
+        
+        ELSE
+           sla_kf = lai / (dw_lf * 100.)                    ! Guarda a relação de área foliar especifica (sla, g/m2)
+           lf_dead_frac = dw_lf_dead / dw_lf                ! Calcula a fração de folhas mortas
+        END IF
+        
+        IF (LAIKF(COUNT_K) .EQ. 0.d0) THEN                  ! Caso o LAI que será assimilado seja igual a zero
+            dw_lf = 0                                       ! Zera o valor de massa seca de folha 
+
+        ELSEIF (sla_kf .EQ. 0.d0) THEN                      ! Caso sla_kf seja igual a zero, devido ao fato do LAI
+            dw_lf = dw_lf                                   ! calculado pelo modelo ser zero 
+
+        ELSE            
+            dw_lf = (LAIKF(COUNT_K) / sla_kf) / 100.        ! Calcula o valor de dw_lf (ton/ha) com base no novo valor de LAI
+
+        END IF
+
+        dw_lf_dead              =       dw_lf * lf_dead_frac ! Calcula dw_lf_dead com base na nova fração
+    ELSE                                            ! Caso não haja assimilação de dados mantem o calculos do modelo
+        dw_lf          =   dw_lf       +   ddw_lf      -   ddw_lf_dead     -   ddw_lf_shed     +   ddw_lf_appear
+        dw_lf_dead     =   dw_lf_dead          +   ddw_lf_dead + ddw_lf_shed
+    END IF
+
+!>>> Data Assimilation
+    
     dw_it       =   dw_it       +   ddw_it      -   ddw_it_dead     +   dsubsres
     dw_it_AG    =   dw_it_AG    +   ddw_it_AG   -   ddw_it_AG_dead
     str_it_AG   =   str_it_AG   +   dstr_it_AG  -   dstr_it_AG_dead
@@ -3101,7 +3206,10 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     dw_it_dead              =   dw_it_dead          +   ddw_it_dead
     dw_it_dead_AG           =   dw_it_dead_AG       +   ddw_it_AG_dead
     dw_it_dead_BG           =   dw_it_dead_BG       +   ddw_it_BG_dead
-    dw_lf_dead              =   dw_lf_dead          +   ddw_lf_dead + ddw_lf_shed
+    
+!>>> Data Assimilation
+    !dw_lf_dead              =   dw_lf_dead          +   ddw_lf_dead + ddw_lf_shed
+!>>> Data Assimilation
     
     !--- Upscale Sucrose/Hexose to Field Level [ton ha-1]    
     suc_it_AG   =   suc_it_AG_ref_till * (nstk_now * tilleragefac) * (1.e4 / 1.e6)
@@ -3223,9 +3331,19 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         diam_stk = -.0256 * nstk_now**2. + .4206 *  nstk_now + .7763
     endif
     
-    !--- Leaf Area Index [m2 m-2]
-    lai         =   lai     +   dlai_gain   -   dlai_dead   -   dlai_shed   +      dlai_gain_appear
+!>>> Data Assimilation
     
+    !--- Leaf Area Index [m2 m-2]
+    IF (KF_I .EQ. 1) THEN ! Condicional para assimilacao de dados 
+        ! Subistitui o valor dei LAI pelo estimado com o algoritimo KF, informado por um arquivo
+        lai         =   LAIKF(COUNT_K)    !+   dlai_gain   -   dlai_dead   -   dlai_shed   +      dlai_gain_appear    
+        COUNT_K = COUNT_K + 1    
+    ELSE
+        lai         =   lai     +   dlai_gain   -   dlai_dead   -   dlai_shed   +      dlai_gain_appear
+    END IF
+    
+!>>> Data Assimilation
+
     !--- Light intercepted for photosynthesis (only green leaves)
     acc_par     =   acc_par  +  dacc_par
     
@@ -3422,7 +3540,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         enddo
         
         !--- Reset phytomer stimuli
-        phy_stimuli    = phy_stimuli  - 1.d0                
+        phy_stimuli    = phy_stimuli  - 1.d0
         
         !-----------------------------------!
         !--- New phytomer initialization ---!
@@ -3437,17 +3555,17 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         
         !--- Leaf initial area and dry Weight [cm2 and g]        
         if(flemerged) phprof(1,5)    = ini_la           ! [cm2]
-        phprof(1,6)                  = ini_la / sla     ! [g]
+        phprof(1, 6)                  = ini_la / sla     ! [g]
         
         !--- Store initial State for SS
         if(flemerged) phprof(1,8)    = ini_la           ! [cm2]         
-        phprof(1,9)                  = ini_la / sla     ! [g]
-        phprof(1,10)                 = nstk_now         ! [tiller m-2] For upscaling
+        phprof(1, 9)                  = ini_la / sla     ! [g]
+        phprof(1, 10)                 = nstk_now         ! [tiller m-2] For upscaling
             
         !--- Initial age of the new phytomer [cDays]
-        phprof(1,1)  =   phy_stimuli * phyllochron
-        phprof(1,12) =   phy_stimuli * plastochron
-        phprof(1,58) =   0.d0   ! Internode will have age zero until reach "Natural Break Point"
+        phprof(1, 1)  =   phy_stimuli * phyllochron
+        phprof(1, 12) =   phy_stimuli * plastochron
+        phprof(1, 58) =   0.d0   ! Internode will have age zero until reach "Natural Break Point"
         
         
         if(flemerged)then
@@ -3611,12 +3729,13 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     !STGDOY      ! Day when plant stage I occurred (YYYYDDD)
     !UNH4        ! Not in use 
     !UNO3        ! Not in use
-    !EORATIO     ! Read in SCSAM047.SPE    
+    !EORATIO     ! Read in SCSAM047.SPE 
     
     return
+
     
 50  continue
-        
+           
     !--------------------------!
     !--- Write Output files ---!    
     !---  DYNAMIC = OUTPUT  ---!
@@ -3742,6 +3861,6 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
                         YRPLT)
     
     return
-    
+        
     end subroutine SAMUCA
     
