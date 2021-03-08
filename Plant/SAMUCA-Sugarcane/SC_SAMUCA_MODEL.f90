@@ -1448,7 +1448,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     RLV         =   rld     ! Root length density for soil layer L (cm[root] / cm3[soil])
     RWUMX       =   rwumax  ! Maximum water uptake per unit root length, constrained by soil water (cm3[water] / cm [root])        
     XHLAI       =   lai     ! Healthy leaf area index (m2[leaf] / m2[ground])
-    XLAI        =   laimod  ! Leaf area (one side) per unit of ground area (m2[leaf] / m2[ground]) [NOTE: we are following canegro and considering as]
+    XLAI        =   laimod  ! Healthy LAI + dead LAI (used for tillering algorithm)
 
     !--- Total LAI must exceed or be equal to healthy LAI
     !--- Following MJ:
@@ -3186,6 +3186,18 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
         END IF
 
         dw_lf_dead              =       dw_lf * lf_dead_frac ! Calcula dw_lf_dead com base na nova fração
+        
+        !--- update leaf state in phytomer profiles proportionally
+        phprof(1:n_ph, 5) = phprof(1:n_ph, 5) * LAIKF(COUNT_K) / lai
+        phprof(1:n_ph, 6) = phprof(1:n_ph, 6) * LAIKF(COUNT_K) / lai
+        
+        !--- check if the crop has emerged
+        if((.not. flemerged) .and. (LAIKF(COUNT_K) .gt. 0.d0))then
+            !--- this will force the crop to emerge and update flags
+            dshootext_BG = shootdepth        
+        endif               
+        
+        
     ELSE                                            ! Caso não haja assimilação de dados mantem o calculos do modelo
         dw_lf          =   dw_lf       +   ddw_lf      -   ddw_lf_dead     -   ddw_lf_shed     +   ddw_lf_appear
         dw_lf_dead     =   dw_lf_dead          +   ddw_lf_dead + ddw_lf_shed
@@ -3334,7 +3346,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
 !>>> Data Assimilation
     
     !--- Leaf Area Index [m2 m-2]
-    IF (KF_I .EQ. 1) THEN ! Condicional para assimilacao de dados 
+    IF (KF_I .EQ. 1) THEN ! Condicional para assimilacao de dados
         ! Subistitui o valor dei LAI pelo estimado com o algoritimo KF, informado por um arquivo
         lai         =   LAIKF(COUNT_K)    !+   dlai_gain   -   dlai_dead   -   dlai_shed   +      dlai_gain_appear    
         COUNT_K = COUNT_K + 1    
@@ -3693,9 +3705,17 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
             nstk                = ini_nstk                                  ! Initial Tillering
             cropdstage          = 'Emergd'                                  ! Update Stage ID     
             diac_at_emergence   = diacsoil                                  ! Cdays at Emergence
-            lai                 = init_leaf_area * ini_nstk / 1.e4          ! [m2 m-2]
+            
+!>>> Data Assimilation            
+            if (KF_I .EQ. 0.) then            
+                !--- initialize lai when data was not assimilated
+                lai  = init_leaf_area * ini_nstk / 1.e4          ! [m2 m-2]            
+            endif           
+!>>> Data Assimilation
+            
             gstd                = 1.d0                                      ! Growth Stage (DSSAT)
-            STGDOY(10)          = Control%YRDOY                             ! Date of emergence
+            STGDOY(10)          = Control%YRDOY                             ! Date of emergence            
+            
         endif        
     endif
             
@@ -3713,7 +3733,7 @@ subroutine SAMUCA(CONTROL, ISWITCH,                                 &
     RLV         =   rld     ! Root length density for soil layer L (cm[root] / cm3[soil])
     RWUMX       =   rwumax  ! Maximum water uptake per unit root length, constrained by soil water (cm3[water] / cm [root])        
     XHLAI       =   lai     ! Healthy leaf area index (m2[leaf] / m2[ground])
-    XLAI        =   laimod  ! Leaf area (one side) per unit of ground area (m2[leaf] / m2[ground]) [NOTE: we are following canegro and considering as]
+    XLAI        =   laimod  ! Healthy LAI + dead LAI (used for tillering algorithm)
     
     !--- Total LAI must exceed or be equal to healthy LAI
     !--- Following MJ:
