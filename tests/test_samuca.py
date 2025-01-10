@@ -6,13 +6,18 @@ import subprocess
 import unittest
 import os
 import pandas as pd
+import argparse as ap
 from pathlib import Path
 from tests.util.read_write import *
+
+exe_path = Path("build/bin/dscsm048.exe").absolute() #exe_path = Path("C:/DSSAT48/dscsm048.exe").absolute()
+dssat_path = Path("C:/DSSAT48/")    
+last_stable_version = "4.8.2.0"
 
 def run_dssat(exe_path: Path, sim_path: Path, args: list)->subprocess.CompletedProcess:
      """Runs dssat from command line"""
      cwd = os.getcwd()
-     os.chdir(sim_path)
+     os.chdir(sim_path)     
      stat = subprocess.run([exe_path] + args, shell=True, capture_output=True)
      os.chdir(cwd)
      return stat
@@ -46,13 +51,10 @@ def run_test(exe_path: Path, sim_path: Path, args: list)->subprocess.CompletedPr
 
 class test_samuca(unittest.TestCase):
 
-    dssat_path = Path("C:/DSSAT48/")
-    exe_path = Path("C:/DSSAT48/dscsm048.exe")
-    last_stable_version = "4.8.2.0"
-
     def test_ESAL1401SCX(self):       
 
         #--- some last-day results from the previous stable version
+        #--- Note: Update when new version is released
         OPG_CTRL = {"@YEAR": 2015,
                     "DOY": 158,
                     "DAP": 328,
@@ -64,15 +66,15 @@ class test_samuca(unittest.TestCase):
                     "RDPD": 120.0}
         
         #--- define target ESAL1401.SCX and arguments
-        sim_path = self.dssat_path.joinpath("Sugarcane")
+        sim_path = dssat_path.joinpath("Sugarcane")
         args = ["C", "ESAL1401.SCX", "1"]
 
         #--- run dssat
-        stat = run_test(self.exe_path, sim_path, args)
+        stat = run_test(exe_path, sim_path, args)
         self.assertEqual(stat.stderr.decode("utf-8"), "", f"Simulation ERROR ({stat.stderr.decode("utf-8")}):\n {stat.stdout.decode("utf-8")}")
         
         #--- read outputs
-        OPG_path = self.dssat_path.joinpath("Sugarcane/PlantGro.OUT")
+        OPG_path = dssat_path.joinpath("Sugarcane/PlantGro.OUT")
         out_head = pd.read_csv(OPG_path, skiprows=4, nrows=5, sep=':', header=None, engine="python")
         out_data = pd.read_csv(OPG_path, skiprows=13, sep='\\s+', header=0, engine="python")
         
@@ -88,8 +90,3 @@ class test_samuca(unittest.TestCase):
              self.assertIn(v, OPG_LASTDAY, f"Variable {v} not found in output file {OPG_path}")
              #self.assertAlmostEqual(OPG_LASTDAY[v], OPG_CTRL[v], places=len(str(OPG_CTRL[v]).split(".")[1]), msg=f"Value for variable {v} differs:\n before={OPG_CTRL[v]}\n now={OPG_LASTDAY[v]}")            
              self.assertEqual(OPG_LASTDAY[v], OPG_CTRL[v], f"Value for variable {v} differs:\n before={OPG_CTRL[v]}\n now={OPG_LASTDAY[v]}")            
-
-
-        
-
-        
