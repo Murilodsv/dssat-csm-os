@@ -67,3 +67,32 @@ Plant/ORYZA
 .vs/*
 .history/*
 Resources/R*
+
+# Python-related testing
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+### Virtual environment
+venv/
+.env/
+.venv/
+
+### Distribution / Packaging
+*.egg-info/
+dist/
+pip-wheel-metadata/
+
+### Environment variables
+.env
+.env.*
+
+### Linux
+*.swp
+*~
+
+### Docker
+Dockerfile
+docker-compose.yml
+.env.docker
